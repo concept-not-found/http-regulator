@@ -42,6 +42,11 @@ server.handler = new AbstractHandler() {
 		response.status = 200
 		response.setHeader("Content-Type", "text/plain")
 		response.writer.withWriter {
+			it << "request "
+			it << request.requestURL
+			it << "?"
+			it << request.queryString
+			it << "\n"
 			it << "time "
 			it << System.currentTimeMillis()
 			it << "\n"

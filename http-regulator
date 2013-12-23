@@ -13,6 +13,7 @@ import org.eclipse.jetty.server.*
 import org.eclipse.jetty.server.handler.*
 import org.eclipse.jetty.util.thread.*
 import javax.servlet.http.*
+import java.nio.charset.*
 import org.apache.http.client.*
 import org.apache.http.message.*
 import org.apache.http.impl.client.*
@@ -63,14 +64,22 @@ try {
 		localPort =  commandLine.getParsedOptionValue("local-port").intValue()
 	}
 	target = commandLine.getOptionValue("target-host")
-	def targetMatch = target =~ /(https?):\/\/([A-Za-z0-9.]+):(\d+)/
+	def targetMatch = target =~ /(https?):\/\/([A-Za-z0-9.-]+)(:(\d+))?/
 	if (!targetMatch.matches()) {
-		throw new ParseException("invalid target host, must be of form http://example.com:8080")
+		throw new ParseException("invalid target host, must be of form http://example.com:8080, port is optional defaults to 80/443")
 	}
-	(targetScheme, targetHost, targetPort) = (1..3).collect {
+	(targetScheme, targetHost) = (1..2).collect {
 		targetMatch.group(it)
 	}
-	targetPort = targetPort as int
+	if (targetMatch.group(4) != null) {
+		targetPort = targetMatch.group(4) as int
+	} else {
+		if (targetScheme == "http") {
+			targetPort = 80
+		} else if (targetScheme == "https") {
+			targetPort = 443
+		}
+	}
 	minDelay = commandLine.getParsedOptionValue("min-delay").intValue()
 	if (commandLine.hasOption("query")) {
 		query = commandLine.getOptionProperties("query")
@@ -80,7 +89,7 @@ try {
 	new HelpFormatter().printHelp("http-regulator", options)
 	System.exit(1)
 }
-
+println("target-host: $targetScheme://$targetHost:$targetPort")
 // create a server that only has 1 acceptor thread and reduce to the minmial thread pool size
 // to ensure only a single thread to handle all requests
 def server = new Server(new QueuedThreadPool(3))
@@ -109,7 +118,7 @@ server.handler = new AbstractHandler() {
 			.setHost(targetHost)
 			.setPort(targetPort)
 			.setPath(request.requestURI)
-			.setCustomQuery(request.queryString)
+			.addParameters(URLEncodedUtils.parse(request.queryString, Charset.forName("UTF-8")))
 			.addParameters(toNameValuePairList(query))
 			.build())
 		def now = System.currentTimeMillis()
