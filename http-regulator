@@ -14,6 +14,7 @@ import org.eclipse.jetty.server.handler.*
 import org.eclipse.jetty.util.thread.*
 import javax.servlet.http.*
 import org.apache.http.client.*
+import org.apache.http.message.*
 import org.apache.http.impl.client.*
 import org.apache.http.client.methods.*
 import org.apache.http.client.utils.*
@@ -42,12 +43,20 @@ options.addOption(OptionBuilder
 	.withDescription("the minimum number of milliseconds to wait between requests.  for example 300 request/second use 4.  for 500 request/10 min use 1200")
 	.isRequired()
 	.create())
+options.addOption(OptionBuilder
+	.withLongOpt("query")
+	.hasArgs(2)
+	.withArgName("name=value")
+	.withValueSeparator()
+	.withDescription("additonal query parameter to include with the target request")
+	.create())
 
 def localPort = 30080
 def targetScheme
 def targetHost
 def targetPort
 def minDelay
+def query = [:]
 try {
 	def commandLine = new GnuParser().parse(options, args)
 	if (commandLine.hasOption("local-port")) {
@@ -63,6 +72,9 @@ try {
 	}
 	targetPort = targetPort as int
 	minDelay = commandLine.getParsedOptionValue("min-delay").intValue()
+	if (commandLine.hasOption("query")) {
+		query = commandLine.getOptionProperties("query")
+	}
 } catch (ParseException e) {
 	System.err << "Failed to parse options: ${e.message}\n"
 	new HelpFormatter().printHelp("http-regulator", options)
@@ -98,6 +110,7 @@ server.handler = new AbstractHandler() {
 			.setPort(targetPort)
 			.setPath(request.requestURI)
 			.setCustomQuery(request.queryString)
+			.addParameters(toNameValuePairList(query))
 			.build())
 		def now = System.currentTimeMillis()
 		def sinceLastRequest = now - lastRequest
@@ -105,6 +118,7 @@ server.handler = new AbstractHandler() {
 		if (sleepTime > 0) {
 			sleep(sleepTime)
 		}
+		lastRequest = System.currentTimeMillis()
 		def clientResponse = client.execute(httpGet)
 		response.status = clientResponse.statusLine.statusCode
 		clientResponse.allHeaders.each {
@@ -112,10 +126,15 @@ server.handler = new AbstractHandler() {
 		}
 		clientResponse.entity.writeTo(response.outputStream)
 		response.flushBuffer()
-		lastRequest = System.currentTimeMillis()
 	}
 }
 
 server.start()
 server.join()
 
+def toNameValuePairList(query) {
+	query.collect {
+		key, value ->
+			new BasicNameValuePair(key, value)
+	}
+}

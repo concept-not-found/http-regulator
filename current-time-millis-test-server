@@ -10,6 +10,7 @@ import org.eclipse.jetty.server.handler.*
 import org.eclipse.jetty.util.thread.*
 import javax.servlet.http.*
 import org.apache.commons.cli.*
+import java.util.concurrent.atomic.*
 
 def options = new Options()
 options.addOption(OptionBuilder
@@ -34,19 +35,33 @@ try {
 
 def server = new Server(port)
 
+def requestCount = new AtomicInteger()
 server.handler = new AbstractHandler() {
 	@Override
 	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) {
 		response.status = 200
 		response.setHeader("Content-Type", "text/plain")
 		response.writer.withWriter {
+			it << "time "
 			it << System.currentTimeMillis()
+			it << "\n"
+			it << "request "
+			it << requestCount.incrementAndGet()
 			it << "\n"
 		}
 		response.flushBuffer()
 	}
 }
 
+def timer = new Timer(true)
+timer.scheduleAtFixedRate(new TimerTask() {
+	public void run() {
+		def requests = requestCount.getAndSet(0)
+		if (requests > 0) {
+			println("$requests per second")
+		}
+	}
+}, 0, 1000)
 server.start()
 server.join()
 
