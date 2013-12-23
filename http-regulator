@@ -1,0 +1,121 @@
+#!/usr/bin/env groovy
+
+@Grapes([
+	@Grab("org.eclipse.jetty:jetty-server:9.1.0.v20131115"),
+	@Grab("org.apache.httpcomponents:httpclient:4.3.1"),
+	@Grab("org.slf4j:jcl-over-slf4j:1.7.5"),
+	@Grab("org.slf4j:slf4j-simple:1.7.5"),
+	@Grab("commons-cli:commons-cli:1.2"),
+	@GrabExclude("commons-logging:commons-logging")
+])
+
+import org.eclipse.jetty.server.*
+import org.eclipse.jetty.server.handler.*
+import org.eclipse.jetty.util.thread.*
+import javax.servlet.http.*
+import org.apache.http.client.*
+import org.apache.http.impl.client.*
+import org.apache.http.client.methods.*
+import org.apache.http.client.utils.*
+import org.apache.commons.cli.*
+
+def options = new Options()
+options.addOption(OptionBuilder
+	.withLongOpt("local-port")
+	.hasArg()
+	.withArgName("number")
+	.withType(Number)
+	.withDescription("the port this server runs on.  default: 30080")
+	.create())
+options.addOption(OptionBuilder
+	.withLongOpt("target-host")
+	.hasArg()
+	.withArgName("url")
+	.withDescription("the target host to proxy to.  eg. http://example.com:8080")
+	.isRequired()
+	.create())
+options.addOption(OptionBuilder
+	.withLongOpt("min-delay")
+	.hasArg()
+	.withArgName("ms between request")
+	.withType(Number)
+	.withDescription("the minimum number of milliseconds to wait between requests.  for example 300 request/second use 4.  for 500 request/10 min use 1200")
+	.isRequired()
+	.create())
+
+def localPort = 30080
+def targetScheme
+def targetHost
+def targetPort
+def minDelay
+try {
+	def commandLine = new GnuParser().parse(options, args)
+	if (commandLine.hasOption("local-port")) {
+		localPort =  commandLine.getParsedOptionValue("local-port").intValue()
+	}
+	target = commandLine.getOptionValue("target-host")
+	def targetMatch = target =~ /(https?):\/\/([A-Za-z0-9.]+):(\d+)/
+	if (!targetMatch.matches()) {
+		throw new ParseException("invalid target host, must be of form http://example.com:8080")
+	}
+	(targetScheme, targetHost, targetPort) = (1..3).collect {
+		targetMatch.group(it)
+	}
+	targetPort = targetPort as int
+	minDelay = commandLine.getParsedOptionValue("min-delay").intValue()
+} catch (ParseException e) {
+	System.err << "Failed to parse options: ${e.message}\n"
+	new HelpFormatter().printHelp("http-regulator", options)
+	System.exit(1)
+}
+
+// create a server that only has 1 acceptor thread and reduce to the minmial thread pool size
+// to ensure only a single thread to handle all requests
+def server = new Server(new QueuedThreadPool(3))
+def connector = new ServerConnector(server, 1, 1)
+connector.port = localPort
+server.connectors = [connector] as Connector[]
+
+server.handler = new AbstractHandler() {
+	def client = HttpClients.createDefault()
+
+	private long lastRequest = System.currentTimeMillis()
+
+	@Override
+	public void destroy() {
+		try {
+			cilent.close()
+		} catch (Exception e) {
+			e.printStackTrace()
+		}
+	}
+
+	@Override
+	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) {
+		def httpGet = new HttpGet(new URIBuilder()
+			.setScheme(targetScheme)
+			.setHost(targetHost)
+			.setPort(targetPort)
+			.setPath(request.requestURI)
+			.setCustomQuery(request.queryString)
+			.build())
+		def now = System.currentTimeMillis()
+		def sinceLastRequest = now - lastRequest
+		def sleepTime = minDelay- sinceLastRequest
+		if (sleepTime > 0) {
+			sleep(sleepTime)
+		}
+		def clientResponse = client.execute(httpGet)
+		response.status = clientResponse.statusLine.statusCode
+		clientResponse.allHeaders.each {
+			response.setHeader(it.name, it.value)
+		}
+		clientResponse.entity.writeTo(response.outputStream)
+		response.flushBuffer()
+		lastRequest = System.currentTimeMillis()
+	}
+}
+
+server.start()
+server.join()
+

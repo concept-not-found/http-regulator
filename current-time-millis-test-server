@@ -1,0 +1,52 @@
+#!/usr/bin/env groovy
+
+@Grapes([
+	@Grab("org.eclipse.jetty:jetty-server:9.1.0.v20131115"),
+	@Grab("commons-cli:commons-cli:1.2")
+])
+
+import org.eclipse.jetty.server.*
+import org.eclipse.jetty.server.handler.*
+import org.eclipse.jetty.util.thread.*
+import javax.servlet.http.*
+import org.apache.commons.cli.*
+
+def options = new Options()
+options.addOption(OptionBuilder
+	.hasArg()
+	.withArgName("port")
+	.withType(Number)
+	.withDescription("the port this server runs on.  default: 9000")
+	.withLongOpt("port")
+	.create("p"))
+
+def port = 9000
+try {
+	def commandLine = new GnuParser().parse(options, args)
+	if (commandLine.hasOption("port")) {
+		port =  commandLine.getParsedOptionValue("port").intValue()
+	}
+} catch (ParseException e) {
+	System.err << "Failed to parse options: ${e.message}\n"
+	new HelpFormatter().printHelp("current-time-millis-test-server", options)
+	System.exit(1)
+}
+
+def server = new Server(port)
+
+server.handler = new AbstractHandler() {
+	@Override
+	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) {
+		response.status = 200
+		response.setHeader("Content-Type", "text/plain")
+		response.writer.withWriter {
+			it << System.currentTimeMillis()
+			it << "\n"
+		}
+		response.flushBuffer()
+	}
+}
+
+server.start()
+server.join()
+
