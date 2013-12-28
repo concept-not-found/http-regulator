@@ -129,6 +129,7 @@ server.handler = new AbstractHandler() {
 		}
 		lastRequest = System.currentTimeMillis()
 		def clientResponse = client.execute(httpGet)
+		println("$httpGet: slept $sleepTime, took ${System.currentTimeMillis() - lastRequest}")
 		response.status = clientResponse.statusLine.statusCode
 		clientResponse.allHeaders.each {
 			response.setHeader(it.name, it.value)
