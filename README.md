@@ -26,7 +26,7 @@ Usage
 
 Example
 -------
-To start a server that will work with Riot's API using the develeopment key limit of 500 requests every 10 minutes (1000*10*60/500 => 1200)
+To start a server that will work with Riot's API using the development key limit of 500 requests every 10 minutes (1000*10*60/500 => 1200)
 
     ./http-regulator --min-delay 1200 --target-host https://prod.api.pvp.net --query api_key=<YOUR API KEY>
 
